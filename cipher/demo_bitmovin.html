@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <script type="text/javascript" src="https://cdn.bitmovin.com/player/web/8/bitmovinplayer.js"></script>
+    <script src="src/DRMLicenseCipher.js"></script>
+    <style>
+        .drm-select {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 5px;
+        }
+        .drm-button {
+            padding: 5px 15px;
+            margin: 0 5px;
+            cursor: pointer;
+        }
+        .drm-button.active {
+            background: #4CAF50;
+            color: white;
+        }
+        .input-group {
+            margin: 10px 0;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .input-group input {
+            width: 100%;
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="drm-select">
+        <h3>DRM select</h3>
+        <button class="drm-button" onclick="selectDRM('widevine')" id="widevine">Widevine</button>
+        <button class="drm-button" onclick="selectDRM('fairplay')" id="fairplay">FairPlay</button>
+        <button class="drm-button" onclick="selectDRM('playready')" id="playready">PlayReady</button>
+        <p id="browser-info"></p>
+    </div>
+
+    <div class="input-group">
+        <label>Site ID <input type="text" id="siteId" name="siteId" value="DEMO"></label>
+        <label>License Url <input type="text" id="licenseUrl" name="licenseUrl"></label>
+        <label>Content Url <input type="text" id="contentUrl" name="contentUrl"></label>
+        <label>pallycon-customdata-v2<input type="text" id="customData" name="customdata"></label>
+        <label id="fairplayCertLabel" style="display: none;">FairPlay Cert URI 
+            <input type="text" id="fairplayCertUrl" name="fairplayCertUrl">
+        </label>
+    </div>
+
+    <div class="control-buttons">
+        <button type="button" onclick="prepare()">prepare</button>
+        <button type="button" onclick="initApp('software')">play</button>
+        <button type="button" onclick="release()">release</button>
+        <button type="button" onclick="reset()">reset</button>
+    </div>
+
+    <div style="max-width:40em;float:left;">
+        <div id="video"></div>
+    </div>
+    
+    <div class="resolution-control">
+        <input type="button" value="resolution check" onclick="getResolution();">
+        <div id="resolution"></div>
+    </div>
+
+    <script>
+        const DRM_CONFIG = {
+            widevine: {
+                contentUrl: "https://contents.pallycon.com/DEMO/app/big_buck_bunny/dash/stream.mpd",
+                licenseUrl: "https://license-global.pallycon.com/ri/licenseManager.do",
+                customData: "eyJrZXlfcm90YXRpb24iOmZhbHNlLCJyZXNwb25zZV9mb3JtYXQiOiJvcmlnaW5hbCIsInVzZXJfaWQiOiJ0ZXN0VXNlciIsImRybV90eXBlIjoid2lkZXZpbmUiLCJzaXRlX2lkIjoiREVNTyIsImhhc2giOiIxb1h5aTFYRUdHRm14bE44V2orbGMxdnY1UjRmSVZSYkVycUZaVjVteEs0PSIsImNpZCI6ImRlbW8tYmJiLXNpbXBsZSIsInBvbGljeSI6IjlXcUlXa2RocHhWR0s4UFNJWWNuSnNjdnVBOXN4Z3ViTHNkK2FqdVwvYm9rQzlTMit4QVBZUmJtZno4dG9FQjM4UGRyM0JqeHZId0J1WlA2WUttY042dHlFSW16a05zQ1I2ZllkUlVvMG9ielVkdVhNdTAydjlxemZEMXdzUWlkdEJtdUZUNjNKc01KTzdDZ2xyWWMyWkRaeWt0dHRQNW1FenR5Mm9aOWdFaVVkYXFCTFE5Sm5sNlZQMko3THlZQVdJNmI1a0g3aUdBMXE4WDE2MVFcL2V5OFo1UHpqZDRhc2cwUVRJaXUwb3VuMzdGc0ZPbzFyYkZcL3FBc0IzYUlEUDdQc2FjTE5Wc2l4bGVCSEV6WjZUWEVTelVFdWtNV0l3R29TdjdCK1d1YW5vTnVIK0RVRitZalByTU5Gbjk1TlwvQ3hJeUY5enQ5UlplT0Q2VHA4UDhHaEZIRlRTSXFSWEVPSkdKMTRUYlZ6TEI3UmptM2tWaUZIRGduTjY1Nks0S3RxMGxuNktXbWRacThobGtMNUVDU21CVUNzZDh5a3lGXC92ckFnS2VnWVpranhmZ0VmT096QTZXYXFJaXl6VTh1YWxxV1RGT0hKTVArY3hLSkNcL2gyd2Y3MVVHQU9vTFpyUzRDOEcxYm51c1lqUklJVEpnZXpzeStcL0kzWXdRWmZiamhQRUZaSGRyOHNtSERydmE0cXNzVk9cL0JUckhsb1JDWTRRQnRWZzZia2g4MURleHlRVjNNZExyWVN5RXoycDlqcU9oY2tpNCtEMHRcL0VhUTNUODBkZHdJdEZCeWtKaGI5MmFFNEZJc09wU3VuNVgrNUlVRGgycTRvanI3cTFNKzNGaU1ocFZ0TWpGSm56UE5JV0NqSytkN1RHMnRKZHRhTnBoTHc3bk1cL1NJZlRUNHd4ZVUxQTk5d3E1ZE1iVWNmTGd6dWZuTkJKSFA1RnY2Z1IxbmNYWDFnVWgyQUhlVHpPUU5DYkl4SllmOCswTksrRVVJUWZVcDQ2TWFIckI4TXFSTkFsTUQrR0gzRHptMXpOUlM3bFNHSkRCS1YwZVNRY1V0eEFZV0dESXVYbDNBanRqdW81YU1wWlV3c3hGSm9CVGNFZHNUTWphY2k4MmhMOW5Jbks0RnBOMWxxQlFcL0FkVmpsRTNzdTROR1dtcms4WW1SVmtvellKaXZOYXBmSXBCVUMyb0dqZGN2SVwvVnVjR0xydlhLTThNbThrMXprZ0FFVWR0RGVLR3dpdk1vV1NDZHh4NUhRZW83N3lLMjNOUk9zZ3RjRjN3YjNJbDVsTCtwXC9ENGhiSHh4XC8xaG5PZ0lBNEJtUHE2Z1NTMD0iLCJ0aW1lc3RhbXAiOiIyMDI0LTA4LTI3VDA0OjQ0OjE3WiJ9"
+            },
+            fairplay: {
+                contentUrl: "https://contents.pallycon.com/DEMO/app/big_buck_bunny/hls/master.m3u8",
+                licenseUrl: "https://license-global.pallycon.com/ri/licenseManager.do",
+                customData: "eyJrZXlfcm90YXRpb24iOmZhbHNlLCJyZXNwb25zZV9mb3JtYXQiOiJvcmlnaW5hbCIsInVzZXJfaWQiOiJ0ZXN0VXNlciIsImRybV90eXBlIjoiZmFpcnBsYXkiLCJzaXRlX2lkIjoiREVNTyIsImhhc2giOiJscUFYTGk5Uk81RmhOR2ZuQU95YUNqbTU3XC9wQkowcnF0cDZZRDJOY3dMbz0iLCJjaWQiOiJkZW1vLWJiYi1zaW1wbGUiLCJwb2xpY3kiOiI5V3FJV2tkaHB4VkdLOFBTSVljbkpzY3Z1QTlzeGd1YkxzZCthanVcL2JvbVFaUGJxSSt4YWVZZlFvY2NrdnVFZnhEY2NtN2NXZFZYcXJkTWdBUWptcVo5bzdYTEZ6MjBOaG1Kdklpd1FidWhLaCtDMmZJSEw5T3UxU09Bc2hQU0FWZHhhWVVKSnJsWjVVMXU1UGNlcjE0NVpCczdnc3ZRc0lsbDlGVHZXanQ3bWhaOHJ3ejdybVNYcURBdEdqYTRsYmVrUnhcL1pyRWx4dkJhWXV0YWFvdVlISWpkNlZpRWVXZEVpRzJIV0VIMGczcW1LYW1QbUp2VUluN0tVODZrUDQiLCJ0aW1lc3RhbXAiOiIyMDI0LTExLTEzVDAwOjIyOjIzWiJ9",
+                fairplayCertUrl: "https://license-global.pallycon.com/ri/fpsKeyManager.do?siteId=DEMO"
+            },
+            playready: {
+                contentUrl: "https://contents.pallycon.com/DEMO/app/big_buck_bunny/dash/stream.mpd",
+                licenseUrl: "https://license-global.pallycon.com/ri/licenseManager.do",
+                customData: "eyJrZXlfcm90YXRpb24iOmZhbHNlLCJyZXNwb25zZV9mb3JtYXQiOiJvcmlnaW5hbCIsInVzZXJfaWQiOiJ0ZXN0VXNlciIsImRybV90eXBlIjoicGxheXJlYWR5Iiwic2l0ZV9pZCI6IkRFTU8iLCJoYXNoIjoiN3dlcU14ejZLVWZNOHh3RUJTSUExUUdJNzJmd2NvTDhxN2RJVDN6WkJZWT0iLCJjaWQiOiJkZW1vLWJiYi1zaW1wbGUiLCJwb2xpY3kiOiI5V3FJV2tkaHB4VkdLOFBTSVljbkpzY3Z1QTlzeGd1YkxzZCthanVcL2JvbVFaUGJxSSt4YWVZZlFvY2NrdnVFZnhEY2NtN2NXZFZYcXJkTWdBUWptcVo5bzdYTEZ6MjBOaG1Kdklpd1FidWhLaCtDMmZJSEw5T3UxU09Bc2hQU0FWZHhhWVVKSnJsWjVVMXU1UGNlcjE0NVpCczdnc3ZRc0lsbDlGVHZXanQ3bWhaOHJ3ejdybVNYcURBdEdqYTRsYmVrUnhcL1pyRWx4dkJhWXV0YWFvdVlISWpkNlZpRWVXZEVpRzJIV0VIMGczcW1LYW1QbUp2VUluN0tVODZrUDQiLCJ0aW1lc3RhbXAiOiIyMDI0LTExLTEzVDAwOjIyOjM0WiJ9"
+            }
+        };
+
+        function detectBrowser() {
+            const userAgent = navigator.userAgent.toLowerCase();
+            if (userAgent.includes("chrome")) return "widevine";
+            if (userAgent.includes("safari")) return "fairplay";
+            if (userAgent.includes("edge") || userAgent.includes("trident") || userAgent.includes("msie")) return "playready";
+            return "widevine";
+        }
+
+        function updateBrowserInfo() {
+            const userAgent = navigator.userAgent;
+            const drmType = detectBrowser();
+            document.getElementById('browser-info').textContent = 
+                `current browser: ${userAgent}\n recommended DRM: ${drmType.toUpperCase()}`;
+        }
+
+        const { DRMLicenseCipher } = window.DRMLicenseCipher;
+        let cipher = null;
+
+        async function selectDRM(drmType) {
+            if (cipher) {
+                await cipher.release();
+                cipher = null;
+            }
+
+            document.querySelectorAll('.drm-button').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(drmType).classList.add('active');
+
+            const config = DRM_CONFIG[drmType];
+            document.getElementById('contentUrl').value = config.contentUrl;
+            document.getElementById('licenseUrl').value = config.licenseUrl;
+            document.getElementById('customData').value = config.customData;
+
+            const fairplayCertLabel = document.getElementById('fairplayCertLabel');
+            if (drmType === 'fairplay') {
+                fairplayCertLabel.style.display = 'block';
+                document.getElementById('fairplayCertUrl').value = config.fairplayCertUrl;
+            } else {
+                fairplayCertLabel.style.display = 'none';
+            }
+        }
+
+        window.onload = function() {
+            updateBrowserInfo();
+            const defaultDRM = detectBrowser();
+            selectDRM(defaultDRM);
+        };
+
+        async function prepare() {
+            if (!cipher) {
+                cipher = new DRMLicenseCipher();
+            }
+
+            const siteId = document.getElementById('siteId').value;
+
+            cipher.on('PallyConError', function(error) {
+                console.log('PallyConError code:', '0x' + error.code.toString(16).toUpperCase());
+                console.log('PallyConError message:', error.message);
+                console.log('PallyConError detail:', error.details);
+            });
+
+            cipher.on('PallyConState', function(state) {
+                console.log('PallyConState:', state.message);
+            });
+
+            cipher.on('DownloadProgress', function(progress) {
+                console.log('DownloadProgress:', progress);
+            });
+
+            const isOk = await cipher.prepare(siteId);
+            console.log('prepare result:', isOk);
+        }
+
+        async function initApp(securityType) {
+            if (window.player) {
+                await window.player.destroy();
+                window.player = null;
+            }
+
+            const conf = {
+                key: 'YOUR_BITMOVIN_LICENSE_KEY'
+            };
+
+            const player = new bitmovin.player.Player(document.getElementById("video"), conf);
+            initPlayer(securityType, player);
+        }
+
+        function initPlayer(securityType, player) {
+            const selectedDrm = document.querySelector('.drm-button.active').id;
+            const licenseUrl = document.getElementById('licenseUrl').value;
+            const contentUrl = document.getElementById('contentUrl').value;
+            const customData = document.getElementById('customData').value;
+            const fairplayCertUrl = document.getElementById('fairplayCertUrl').value;
+
+            window.player = player;
+
+            player.on("playing", event => {
+                console.log("playing:", event);
+            });
+
+            player.on("error", error => {
+                console.log('Error:', error);
+            });
+
+            let source = {
+                dash: selectedDrm !== 'fairplay' ? contentUrl : undefined,
+                hls: selectedDrm === 'fairplay' ? contentUrl : undefined,
+                drm: {}
+            };
+
+            switch (selectedDrm) {
+                case 'widevine':
+                    source.drm.widevine = {
+                        LA_URL: licenseUrl,
+                        headers: {
+                            'pallycon-customdata-v2': customData
+                        }
+                    };
+                    break;
+
+                case 'fairplay':
+                    source.drm.fairplay = {
+                        LA_URL: licenseUrl,
+                        certificateURL: fairplayCertUrl,
+                        headers: {
+                            'pallycon-customdata-v2': customData
+                        },
+						// Content ID preparation functions
+						prepareContentId: function (contentId) {
+							// Extracting content IDs from SKD URLs
+							return contentId.substring(contentId.indexOf('skd://') + 6);
+						},
+						// Certificate preparation functions
+						prepareCertificate: function (rawResponse) {
+							// Base64 decode and convert rawResponse to Uint8Array
+							var responseText = String.fromCharCode.apply(null, new Uint8Array(rawResponse));
+							var raw = window.atob(responseText);
+							var rawLength = raw.length;
+							var certificate = new Uint8Array(new ArrayBuffer(rawLength));
+
+							for (var i = 0; i < rawLength; i++) {
+								certificate[i] = raw.charCodeAt(i);
+							}
+
+							return certificate;
+						},
+						useUint16InitData: true // Handling initData with Uint16
+					};
+                    break;
+
+                case 'playready':
+                    source.drm.playready = {
+                        LA_URL: licenseUrl,
+                        headers: {
+                            'pallycon-customdata-v2': customData
+                        }
+                    };
+                    break;
+            }
+
+            player.load(source).then(
+                () => {
+                    console.log('Successfully loaded source');
+                    player.play();
+                },
+                () => {
+                    console.log('Error while loading source');
+                }
+            );
+        }
+
+        async function release() {
+            if (cipher) {
+                await cipher.release();
+            }
+        }
+
+        async function reset() {
+            if (cipher) {
+                await cipher.reset();
+            }
+        }
+
+        function getResolution() {
+            const resolutionBox = document.getElementById('resolution');
+            resolutionBox.innerHTML = "";
+            const player = window.player;
+
+            if (player && player.getAvailableVideoQualities) {
+                const qualities = player.getAvailableVideoQualities();
+                qualities.forEach((quality, index) => {
+                    const box = `<input type="button" onclick="changeResolution(${index})" value="${quality.width}x${quality.height}px">`;
+                    resolutionBox.innerHTML += box;
+                });
+            }
+        }
+
+        function changeResolution(index) {
+            const player = window.player;
+            if (player && player.getAvailableVideoQualities) {
+                const qualities = player.getAvailableVideoQualities();
+                player.setVideoQuality(qualities[index].id);
+            }
+        }
+    </script>
+</body>
+</html>
+
+
